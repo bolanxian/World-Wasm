@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vite + TS</title>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script>
+    import("./src/main.ts").then(async (WORLD) => {
+      const x = new Float64Array(24000), fs = 48000
+      WORLD.create().then(world => {
+        const [_f0, t] = world.dio(x, fs)
+        const f0 = world.stonemask(x, _f0, t, fs)
+        const sp = world.cheaptrick(x, f0, t, fs)
+        const ap = world.d4c(x, f0, t, fs)
+        const y = world.synthesis(f0, sp, ap, fs)
+        console.log('sync', { y, t, f0, sp, ap })
+      })
+      WORLD.createAsync().then(async (world) => {
+        const [_f0, t] = await world.dio(x, fs)
+        const f0 = await world.stonemask(x, _f0, t, fs)
+        const sp = await world.cheaptrick(x, f0, t, fs)
+        const ap = await world.d4c(x, f0, t, fs)
+        const y = await world.synthesis(f0, sp, ap, fs)
+        console.log('async', { y, t, f0, sp, ap })
+      })
+      //Object.assign(window, { world, worldAsync })
+    })
+  </script>
+</body>
+
+</html>
