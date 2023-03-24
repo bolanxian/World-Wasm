@@ -49,21 +49,21 @@ export class WorldAsync {
   }
   async cheaptrick(
     x: TypedArray<'float32' | 'float64'>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
-  ) {
+  ): Promise<TypeNdarray<2, 'float64'>> {
     const result = await workerFetch(this.#module, 'cheaptrick', [x, f0, t, fs])
     return Ndarray.unpack(result) as TypeNdarray<2, 'float64'>
   }
   async d4c(
     x: TypedArray<'float32' | 'float64'>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
-  ) {
+  ): Promise<TypeNdarray<2, 'float64'>> {
     const result = await workerFetch(this.#module, 'd4c', [x, f0, t, fs])
     return Ndarray.unpack(result) as TypeNdarray<2, 'float64'>
   }
-  async wav2world(x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5) {
+  async wav2world(x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5): Promise<[
+    TypedArray<'float64'>, TypeNdarray<2, 'float64'>, TypeNdarray<2, 'float64'>
+  ]> {
     let [f0, sp, ap] = await workerFetch(this.#module, 'wav2world', [x, fs, frame_period])
-    return [f0, Ndarray.unpack(sp), Ndarray.unpack(ap)] as [
-      TypedArray<'float64'>, TypeNdarray<2, 'float64'>, TypeNdarray<2, 'float64'>
-    ]
+    return [f0, Ndarray.unpack(sp) as TypeNdarray<2, 'float64'>, Ndarray.unpack(ap) as TypeNdarray<2, 'float64'>]
   }
   synthesis(
     f0: TypedArray<'float64'>,

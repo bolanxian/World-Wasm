@@ -101,7 +101,9 @@ export class World {
     this.#data = null
     return data[4]
   }
-  wav2world(x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5) {
+  wav2world(x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5): [
+    TypedArray<'float64'>, TypeNdarray<2, 'float64'>, TypeNdarray<2, 'float64'>
+  ] {
     const [_f0, t] = this.dio(x, fs, frame_period)
     const f0 = this.stonemask(x, _f0, t, fs)
     const sp = this.cheaptrick(x, f0, t, fs)
