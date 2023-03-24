@@ -44,10 +44,10 @@ extern "C"
     delete[] ptr;
   }
 
-  EM_JS(void, readFloat64Array, (int type, double *ptr, int length), {})
-  EM_JS(void, writeFloat64Array, (int type, double *ptr, int length), {})
-  EM_JS(void, readFloat64Array2D, (int type, double **ptr, int x, int y), {})
-  EM_JS(void, writeFloat64Array2D, (int type, double **ptr, int x, int y), {})
+  EM_JS(void, readFloat64Array, (int fd, double *ptr, int length), {})
+  EM_JS(void, writeFloat64Array, (int fd, double *ptr, int length), {})
+  EM_JS(void, readFloat64Array2D, (int fd, double **ptr, int x, int y), {})
+  EM_JS(void, writeFloat64Array2D, (int fd, double **ptr, int x, int y), {})
   DioOption dioOption = {0};
   HarvestOption harvestOption = {0};
   CheapTrickOption cheapTrickOption = {0};

@@ -12,6 +12,8 @@ const workerFetch = (module: WebAssembly.Module, method: string, args: any[]) =>
     else { ok(data) }
     worker.terminate()
   })
+  worker.addEventListener('error', reject)
+  worker.addEventListener('messageerror', reject)
   worker.postMessage({ module, method, args })
 })
 let currentModule: WebAssembly.Module | null = null
@@ -31,33 +33,33 @@ export class WorldAsync {
     this.#module = module
   }
   dio(
-    x: ArrayLike<number>, fs: number, frame_period: number = 5, withStoneMask: boolean = false
+    x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5, withStoneMask: boolean = false
   ): Promise<[TypedArray<'float64'>, TypedArray<'float64'>]> {
     return workerFetch(this.#module, 'dio', [x, fs, frame_period, withStoneMask])
   }
   harvest(
-    x: ArrayLike<number>, fs: number, frame_period: number = 5, withStoneMask: boolean = false
+    x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5, withStoneMask: boolean = false
   ): Promise<[TypedArray<'float64'>, TypedArray<'float64'>]> {
     return workerFetch(this.#module, 'harvest', [x, fs, frame_period, withStoneMask])
   }
   stonemask(
-    x: ArrayLike<number>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
+    x: TypedArray<'float32' | 'float64'>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
   ): Promise<TypedArray<'float64'>> {
     return workerFetch(this.#module, 'stonemask', [x, f0, t, fs])
   }
   async cheaptrick(
-    x: ArrayLike<number>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
+    x: TypedArray<'float32' | 'float64'>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
   ) {
     const result = await workerFetch(this.#module, 'cheaptrick', [x, f0, t, fs])
     return Ndarray.unpack(result) as TypeNdarray<2, 'float64'>
   }
   async d4c(
-    x: ArrayLike<number>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
+    x: TypedArray<'float32' | 'float64'>, f0: TypedArray<'float64'>, t: TypedArray<'float64'>, fs: number
   ) {
     const result = await workerFetch(this.#module, 'd4c', [x, f0, t, fs])
     return Ndarray.unpack(result) as TypeNdarray<2, 'float64'>
   }
-  async wav2world(x: ArrayLike<number>, fs: number, frame_period: number = 5) {
+  async wav2world(x: TypedArray<'float32' | 'float64'>, fs: number, frame_period: number = 5) {
     let [f0, sp, ap] = await workerFetch(this.#module, 'wav2world', [x, fs, frame_period])
     return [f0, Ndarray.unpack(sp), Ndarray.unpack(ap)] as [
       TypedArray<'float64'>, TypeNdarray<2, 'float64'>, TypeNdarray<2, 'float64'>
