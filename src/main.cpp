@@ -4,7 +4,9 @@
 #define __wasm__
 #endif
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <emscripten.h>
 
 #include "world/matlabfunctions.h"
@@ -16,15 +18,24 @@
 #include "world/cheaptrick.h"
 #include "world/d4c.h"
 #include "world/synthesis.h"
+#include "tools/audioio.h"
+
 extern "C"
 {
-  EMSCRIPTEN_KEEPALIVE double *createFloat64Array(int size)
+  int printf(const char *fmt, ...)
   {
-    return new double[size];
+    va_list args;
+    int ret = 0;
+    va_start(args, fmt);
+    ret = vfprintf(stderr, fmt, args);
+    va_end(args);
+    fflush(stderr);
+    return ret;
   }
-  EMSCRIPTEN_KEEPALIVE void deleteFloat64Array(double *ptr)
+  int puts(const char *s)
   {
-    delete[] ptr;
+    fputs(s, stderr);
+    return fflush(stderr);
   }
   EMSCRIPTEN_KEEPALIVE double __inline__ **createFloat64Array2D(int x, int y)
   {
@@ -48,6 +59,35 @@ extern "C"
   EM_JS(void, writeFloat64Array, (int fd, double *ptr, int length), {})
   EM_JS(void, readFloat64Array2D, (int fd, double **ptr, int x, int y), {})
   EM_JS(void, writeFloat64Array2D, (int fd, double **ptr, int x, int y), {})
+
+  EMSCRIPTEN_KEEPALIVE int _wavreadlength()
+  {
+    const char *path = "/dev/stdin";
+    int x_length = GetAudioLength(path);
+    return x_length;
+  }
+  EMSCRIPTEN_KEEPALIVE int _wavread(int x_length)
+  {
+    const char *path = "/dev/stdin";
+    int fs, nbit;
+    double *x = new double[x_length];
+    wavread(path, &fs, &nbit, x);
+    if (fs > 0)
+    {
+      writeFloat64Array(1, x, x_length);
+    }
+    delete[] x;
+    return fs;
+  }
+  EMSCRIPTEN_KEEPALIVE void _wavwrite(int x_length, int fs)
+  {
+    const char *path = "/dev/stdout";
+    double *x = new double[x_length];
+    readFloat64Array(0, x, x_length);
+    wavwrite(x, x_length, fs, 16, path);
+    delete[] x;
+  }
+
   DioOption dioOption = {0};
   HarvestOption harvestOption = {0};
   CheapTrickOption cheapTrickOption = {0};

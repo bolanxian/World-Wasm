@@ -105,7 +105,7 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
     return this.shape.length
   }
   slice(begin: number = 0, end: number = this.length): Readonly<this> {
-    return Ndarray.unpack(Ndarray.pack(this.subarray(begin, end))) as this
+    return Ndarray.unpack<this>(Ndarray.pack(this.subarray(begin, end))) as this
   }
   subarray(begin: number = 0, end: number = this.length): Readonly<this> {
     if (begin < 0) { begin += this.length }
@@ -147,11 +147,11 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
       buffer: new Uint8Array(buffer, byteOffset, byteLength)
     }
   }
-  static unpack(array: NdarrayPacked): Ndarray | TypedArray {
+  static unpack<T extends Ndarray | TypedArray>(array: NdarrayPacked): T {
     let { buffer, shape, dtype } = array
     const { byteOffset, byteLength } = buffer
     const Ctor = typeToCtor.get(dtype) as TypedArrayConstructor
-    return this.create(new Ctor(buffer.buffer.slice(byteOffset, byteOffset + byteLength)), shape)
+    return this.create(new Ctor(buffer.buffer.slice(byteOffset, byteOffset + byteLength)), shape) as T
   }
 }
 Object.assign(Ndarray.prototype, {

@@ -7,8 +7,14 @@ import type * as ndarray from './ndarray'
 export type { ndarray }
 
 import { getModule } from './loader'
-import { World, createWorld } from './world'
-import { WorldAsync, createWorldAsync } from './world-async'
+import { World, createWorld, WorldInterface, X, Y, TimeAxis, F0, SP, AP } from './world'
+import { WorldAsync, createWorldAsync, WorldAsyncInterface } from './world-async'
+
 export { getModule, World, WorldAsync }
+export type { WorldInterface, WorldAsyncInterface, X, Y, TimeAxis, F0, SP, AP }
 export const create = async () => createWorld(await getModule())
 export const createAsync = createWorldAsync
+export {
+  create as createWorld,
+  createWorldAsync
+}
