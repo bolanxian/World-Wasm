@@ -73,7 +73,14 @@
       })
       const world = await WORLD.create()
       const worldAsync = await WORLD.createAsync()
-      Object.assign(window, { WORLD, world, worldAsync })
+      let _ = { WORLD, world, worldAsync }
+      try {
+        world.wavread(new ArrayBuffer(0))
+      } catch (error) {
+        _.error = error
+      }
+      Object.assign(window, _)
+      console.log(_)
     })
   </script>
 </body>

@@ -18,6 +18,7 @@ export interface WorldInterface {
   synthesis(f0: F0, spectrogram: SP, aperiodicity: AP, fs: number, frame_period?: number): Y
 }
 
+const ERRNO_BADF = 8
 const ERRNO_INVAL = 28
 class WasiFile {
   #buffer: Uint8Array
@@ -109,26 +110,31 @@ export class World implements WorldInterface {
       const instance = await _wai(module, {
         wasi_snapshot_preview1: {
           fd_read(fd: number, iovs_ptr: number, iovs_len: number, nread_ptr: number): number {
-            const file: WasiFile = that.#context[fd]
+            const file: WasiFile = that.#fds[fd]
+            if (file == null) { return -ERRNO_BADF }
             let nread = file.read(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nread_ptr, 1)[0] = nread
             return 0
           },
           fd_write(fd: number, iovs_ptr: number, iovs_len: number, nwritten_ptr: number): number {
-            const file: WasiFile = that.#context[fd]
+            const file: WasiFile = that.#fds[fd]
+            if (file == null) { return -ERRNO_BADF }
             let nwrite = file.write(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nwritten_ptr, 1)[0] = nwrite
             return 0
           },
           fd_seek(fd: number, offset: bigint, whence: number, offset_out_ptr: number): number {
-            const file: WasiFile = that.#context[fd]
+            const file: WasiFile = that.#fds[fd]
+            if (file == null) { return -ERRNO_BADF }
             let new_offset = file.seek(Number(offset), whence)
-            if (new_offset < 0) { return ERRNO_INVAL }
+            if (new_offset < 0) { return -ERRNO_INVAL }
             new Uint32Array(buffer, offset_out_ptr >>> 0, 1)[0] = new_offset
             return 0
           },
           fd_close(fd: number): number {
-            that.#context[fd].seek(0, 0)
+            const file: WasiFile = that.#fds[fd]
+            if (file == null) { return -ERRNO_BADF }
+            that.#fds[fd].seek(0, 0)
             return 0
           },
           proc_exit(exit_code: number) { throw new Error('exit with exit code ' + exit_code) }
@@ -171,6 +177,7 @@ export class World implements WorldInterface {
   #instance: WebAssembly.Instance
   #exports: any
   #context: any
+  #fds: any
   constructor(instance: WebAssembly.Instance) {
     if (currentInstance !== instance) {
       throw new TypeError('Illegal constructor.')
@@ -178,6 +185,7 @@ export class World implements WorldInterface {
     this.#instance = instance
     this.#exports = instance.exports
     this.#context = null
+    this.#fds = null
   }
   #init(fs: number, f0_floor: number = 0, f0_ceil: number = 0) {
     this.#exports._init(fs, f0_floor, f0_ceil)
@@ -239,27 +247,42 @@ export class World implements WorldInterface {
     return context[0]
   }
   wavread(wav: ArrayBufferLike): [X, number] {
-    const context: any = this.#context = [
-      new WasiFile(wav, wav.byteLength), null, new WasiFile(new ArrayBuffer(8))
-    ]
-    const x_length = this.#exports._wavreadlength()
-    if (x_length > 0) {
-      const fs = this.#exports._wavread(x_length)
+    try {
+      this.#context = [null]
+      this.#fds = [
+        null, new WasiFile(new ArrayBuffer(8)),
+        null, new WasiFile(wav, wav.byteLength)
+      ]
+      const x_length = this.#exports._wavreadlength()
+      if (x_length > 0) {
+        const fs = this.#exports._wavread(x_length)
+        if (fs > 0) {
+          return [this.#context[0], fs]
+        }
+      }
+      throw new TypeError(this.#fds[1].getText().trim())
+    } finally {
       this.#context = null
-      if (fs > 0) { return [context[1], fs] }
+      this.#fds = null
     }
-    this.#context = null
-    throw new TypeError(context[2].getText())
   }
   wavwrite(x: X, fs: number): Blob {
-    const context: any = this.#context = [
-      x, new WasiFile(new ArrayBuffer(256)), new WasiFile(new ArrayBuffer(8))
-    ]
-    this.#exports._wavwrite(x.length, fs)
-    this.#context = null
-    const file: WasiFile = context[1]
-    if (file.size > 0) { return new Blob([file.getData()], { type: 'audio/wave' }) }
-    throw new TypeError(context[2].getText())
+    try {
+      this.#context = [x]
+      this.#fds = [
+        null, new WasiFile(new ArrayBuffer(8)),
+        null, new WasiFile(new ArrayBuffer(256))
+      ]
+      this.#exports._wavwrite(x.length, fs)
+      const file: WasiFile = this.#fds[3]
+      if (file.size > 0) {
+        return new Blob([file.getData()], { type: 'audio/wave' })
+      }
+      throw new TypeError(this.#fds[1].getText().trim())
+    } finally {
+      this.#context = null
+      this.#fds = null
+    }
   }
 }
 export const createWorld = _createWorld

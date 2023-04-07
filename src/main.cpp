@@ -3,10 +3,13 @@
 #ifndef __wasm__
 #define __wasm__
 #endif
+#include <errno.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
+#include <string.h>
+#include <unistd.h>
 #include <emscripten.h>
 
 #include "world/matlabfunctions.h"
@@ -22,21 +25,29 @@
 
 extern "C"
 {
-  int printf(const char *fmt, ...)
+  // from emsdk/upstream/emscripten/system/lib/standalone/standalone.c
+  int __syscall_openat(int dirfd, intptr_t _path, int flags, ...)
   {
-    va_list args;
-    int ret = 0;
-    va_start(args, fmt);
-    ret = vfprintf(stderr, fmt, args);
-    va_end(args);
-    fflush(stderr);
-    return ret;
+    auto path = (const char *)_path;
+    if (!strcmp(path, "/dev/stdin"))
+    {
+      return STDIN_FILENO;
+    }
+    if (!strcmp(path, "/dev/stdout"))
+    {
+      return STDOUT_FILENO;
+    }
+    if (!strcmp(path, "/dev/stderr"))
+    {
+      return STDERR_FILENO;
+    }
+    if (!strcmp(path, "sample.wav"))
+    {
+      return 3;
+    }
+    return -EPERM;
   }
-  int puts(const char *s)
-  {
-    fputs(s, stderr);
-    return fflush(stderr);
-  }
+
   EMSCRIPTEN_KEEPALIVE double __inline__ **createFloat64Array2D(int x, int y)
   {
     double **array = new double *[x];
@@ -62,26 +73,26 @@ extern "C"
 
   EMSCRIPTEN_KEEPALIVE int _wavreadlength()
   {
-    const char *path = "/dev/stdin";
+    const char *path = "sample.wav";
     int x_length = GetAudioLength(path);
     return x_length;
   }
   EMSCRIPTEN_KEEPALIVE int _wavread(int x_length)
   {
-    const char *path = "/dev/stdin";
+    const char *path = "sample.wav";
     int fs, nbit;
     double *x = new double[x_length];
     wavread(path, &fs, &nbit, x);
     if (fs > 0)
     {
-      writeFloat64Array(1, x, x_length);
+      writeFloat64Array(0, x, x_length);
     }
     delete[] x;
     return fs;
   }
   EMSCRIPTEN_KEEPALIVE void _wavwrite(int x_length, int fs)
   {
-    const char *path = "/dev/stdout";
+    const char *path = "sample.wav";
     double *x = new double[x_length];
     readFloat64Array(0, x, x_length);
     wavwrite(x, x_length, fs, 16, path);
