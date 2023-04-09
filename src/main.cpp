@@ -1,8 +1,4 @@
 
-
-#ifndef __wasm__
-#define __wasm__
-#endif
 #include <errno.h>
 #include <math.h>
 #include <stdarg.h>
@@ -48,7 +44,43 @@ extern "C"
     return -EPERM;
   }
 
-  EMSCRIPTEN_KEEPALIVE double __inline__ **createFloat64Array2D(int x, int y)
+  EMSCRIPTEN_KEEPALIVE int _get_info()
+  {
+#define PRINTDEF(def) printf(#def " = %d\n", def)
+#define PRINTSIZE(type) printf("sizeof(" #type ") = %lu\n", sizeof(type))
+    printf("World Vocoder for WebAssembly\n");
+    printf("Emscripten %d.%d.%d\n", __EMSCRIPTEN_major__, __EMSCRIPTEN_minor__, __EMSCRIPTEN_tiny__);
+    printf(__VERSION__ "\n");
+    printf("Compiled: " __DATE__ " " __TIME__ "\n");
+    printf("__cplusplus = %ld\n", __cplusplus);
+    PRINTDEF(__wasm__);
+    PRINTDEF(__ORDER_BIG_ENDIAN__);
+    PRINTDEF(__ORDER_LITTLE_ENDIAN__);
+    PRINTDEF(__ORDER_PDP_ENDIAN__);
+    PRINTDEF(__BYTE_ORDER__);
+    const int32_t byteorder = 0x04030201;
+    printf("byteorder = %hhd%hhd%hhd%hhd\n",
+           ((char *)&byteorder)[0], ((char *)&byteorder)[1],
+           ((char *)&byteorder)[2], ((char *)&byteorder)[3]);
+    PRINTSIZE(void *);
+    PRINTSIZE(char);
+    PRINTSIZE(short);
+    PRINTSIZE(int);
+    PRINTSIZE(long);
+    PRINTSIZE(long long);
+    PRINTSIZE(float);
+    PRINTSIZE(double);
+    PRINTSIZE(long double);
+    PRINTSIZE(DioOption);
+    PRINTSIZE(HarvestOption);
+    PRINTSIZE(CheapTrickOption);
+    PRINTSIZE(D4COption);
+#undef PRINTDEF
+#undef PRINTSIZE
+    return 0;
+  }
+
+  EMSCRIPTEN_KEEPALIVE inline double **createFloat64Array2D(int x, int y)
   {
     double **array = new double *[x];
     for (int i = 0; i < x; i++)
@@ -57,7 +89,7 @@ extern "C"
     }
     return array;
   }
-  EMSCRIPTEN_KEEPALIVE void __inline__ deleteFloat64Array2D(double **ptr, int x)
+  EMSCRIPTEN_KEEPALIVE inline void deleteFloat64Array2D(double **ptr, int x)
   {
     for (int i = 0; i < x; i++)
     {
@@ -81,11 +113,14 @@ extern "C"
   {
     const char *path = "sample.wav";
     int fs, nbit;
-    double *x = new double[x_length];
+    double *x = new double[x_length > 2 ? x_length : 2];
     wavread(path, &fs, &nbit, x);
     if (fs > 0)
     {
       writeFloat64Array(0, x, x_length);
+      x[0] = fs;
+      x[1] = nbit;
+      writeFloat64Array(1, x, 2);
     }
     delete[] x;
     return fs;
@@ -104,7 +139,7 @@ extern "C"
   CheapTrickOption cheapTrickOption = {0};
   D4COption d4cOption = {0};
 
-  EMSCRIPTEN_KEEPALIVE int _init(int fs, double f0_floor, double f0_ceil)
+  EMSCRIPTEN_KEEPALIVE int _init_world(int fs, double f0_floor, double f0_ceil)
   {
     InitializeDioOption(&dioOption);
     InitializeHarvestOption(&harvestOption);

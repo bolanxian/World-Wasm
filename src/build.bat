@@ -6,7 +6,7 @@ if not %ERRORLEVEL%==0 (
 )
 mkdir "temp"
 set "CFLAGS=-flto -I deps/World/src/ -I deps/World/ -O3"
-set "EMCC_FLAGS=--no-entry -s ALLOW_MEMORY_GROWTH"
+set "EMCC_FLAGS=--no-entry -s ALLOW_MEMORY_GROWTH -s INITIAL_MEMORY=131072"
 
 for %%i in (matlabfunctions common fft dio harvest stonemask cheaptrick d4c synthesis) do (
   if not exist "temp/%%i.o" (

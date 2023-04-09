@@ -29,6 +29,7 @@
         </tr>
       </tbody>
     </table>
+    <div name="info" style="margin-top: 10px"></div>
   </div>
   <script>
     import("./src/main.ts").then(async (WORLD) => {
@@ -74,6 +75,7 @@
       const world = await WORLD.create()
       const worldAsync = await WORLD.createAsync()
       let _ = { WORLD, world, worldAsync }
+      document.querySelector('[name=info]').innerText = world.about()
       try {
         world.wavread(new ArrayBuffer(0))
       } catch (error) {

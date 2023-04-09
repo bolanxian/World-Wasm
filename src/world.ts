@@ -18,6 +18,7 @@ export interface WorldInterface {
   synthesis(f0: F0, spectrogram: SP, aperiodicity: AP, fs: number, frame_period?: number): Y
 }
 
+const { min } = Math
 const ERRNO_BADF = 8
 const ERRNO_INVAL = 28
 class WasiFile {
@@ -27,16 +28,21 @@ class WasiFile {
   get buffer() { return this.#buffer }
   get pos() { return this.#pos }
   get size() { return this.#size }
-  constructor(buffer: ArrayBufferLike, size: number = 0) {
-    this.#buffer = new Uint8Array(buffer)
-    this.#size = size
+  constructor(buffer: ArrayBufferLike | number) {
+    if (typeof buffer === 'number') {
+      this.#buffer = new Uint8Array(buffer)
+      this.#size = 0
+    } else {
+      this.#buffer = new Uint8Array(buffer)
+      this.#size = this.#buffer.byteLength
+    }
   }
   #grow(newSize: number) {
     const oldSize = this.#buffer.length
     if (newSize > oldSize) {
       let size = oldSize
-      if (size === 0) { size = 8 }
-      do { size *= 2 } while (newSize > size)
+      if (size < 1) { size = 8 }
+      do { size += min(size, 65536) } while (newSize > size)
       let buffer = this.#buffer
       this.#buffer = new Uint8Array(size)
       this.#buffer.set(buffer)
@@ -128,7 +134,7 @@ export class World implements WorldInterface {
             if (file == null) { return -ERRNO_BADF }
             let new_offset = file.seek(Number(offset), whence)
             if (new_offset < 0) { return -ERRNO_INVAL }
-            new Uint32Array(buffer, offset_out_ptr >>> 0, 1)[0] = new_offset
+            new BigUint64Array(buffer, offset_out_ptr >>> 0, 1)[0] = BigInt(new_offset)
             return 0
           },
           fd_close(fd: number): number {
@@ -161,13 +167,13 @@ export class World implements WorldInterface {
               array[i].set(new Float64Array(buffer, ptrs[i], y))
             }
           },
-          emscripten_notify_memory_growth: (size: number) => {
+          emscripten_notify_memory_growth(memory_index: number) {
             buffer = memory.buffer
           }
         }
       })
       const { memory } = instance.exports as any
-      let buffer: ArrayBuffer = memory.buffer
+      let buffer: ArrayBufferLike = memory.buffer
       currentInstance = instance
       const that = new World(instance)
       currentInstance = null
@@ -186,9 +192,19 @@ export class World implements WorldInterface {
     this.#exports = instance.exports
     this.#context = null
     this.#fds = null
+    this.#exports._initialize()
+  }
+  about(): string {
+    try {
+      this.#fds = [null, new WasiFile(8)]
+      this.#exports._get_info()
+      return this.#fds[1].getText().trim()
+    } finally {
+      this.#fds = null
+    }
   }
   #init(fs: number, f0_floor: number = 0, f0_ceil: number = 0) {
-    this.#exports._init(fs, f0_floor, f0_ceil)
+    this.#exports._init_world(fs, f0_floor, f0_ceil)
   }
   dio(x: X, fs: number, frame_period: number = 5, withStoneMask: boolean = false): [F0, TimeAxis] {
     const context: any = this.#context = [x]
@@ -250,8 +266,8 @@ export class World implements WorldInterface {
     try {
       this.#context = [null]
       this.#fds = [
-        null, new WasiFile(new ArrayBuffer(8)),
-        null, new WasiFile(wav, wav.byteLength)
+        null, new WasiFile(8),
+        null, new WasiFile(wav)
       ]
       const x_length = this.#exports._wavreadlength()
       if (x_length > 0) {
@@ -270,8 +286,8 @@ export class World implements WorldInterface {
     try {
       this.#context = [x]
       this.#fds = [
-        null, new WasiFile(new ArrayBuffer(8)),
-        null, new WasiFile(new ArrayBuffer(256))
+        null, new WasiFile(8),
+        null, new WasiFile(256)
       ]
       this.#exports._wavwrite(x.length, fs)
       const file: WasiFile = this.#fds[3]

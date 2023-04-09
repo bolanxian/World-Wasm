@@ -104,10 +104,10 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
   get ndim() {
     return this.shape.length
   }
-  slice(begin: number = 0, end: number = this.length): Readonly<this> {
-    return Ndarray.unpack<this>(Ndarray.pack(this.subarray(begin, end))) as this
+  slice(begin: number = 0, end: number = this.length): this {
+    return Ndarray.unpack<this>(Ndarray.pack(this.subarray(begin, end)))
   }
-  subarray(begin: number = 0, end: number = this.length): Readonly<this> {
+  subarray(begin: number = 0, end: number = this.length): this {
     if (begin < 0) { begin += this.length }
     let array = super.slice(begin, end) as any
     array.buffer = this.buffer
