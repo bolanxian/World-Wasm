@@ -8,14 +8,34 @@ export type TimeAxis = TypedArray<'float64'>
 export type F0 = TypedArray<'float64'>
 export type SP = TypeNdarray<2, 'float64'>
 export type AP = TypeNdarray<2, 'float64'>
+
+export interface DioResult {
+  f0: F0
+  time_axis: TimeAxis
+}
+export interface CheapTrickResult {
+  fft_size: number
+  spectrogram: SP
+}
+export interface D4CResult {
+  aperiodicity: AP
+}
+export interface WorldResult extends DioResult, CheapTrickResult, D4CResult { }
+
 export interface WorldInterface {
-  dio(x: X, fs: number, frame_period?: number, withStoneMask?: boolean): [F0, TimeAxis]
-  harvest(x: X, fs: number, frame_period?: number, withStoneMask?: boolean): [F0, TimeAxis]
+  dio(x: X, fs: number, frame_period?: number, withStoneMask?: boolean): DioResult
+  harvest(x: X, fs: number, frame_period?: number, withStoneMask?: boolean): DioResult
   stonemask(x: X, f0: F0, t: TimeAxis, fs: number): F0
-  cheaptrick(x: X, f0: F0, t: TimeAxis, fs: number): SP
-  d4c(x: X, f0: F0, t: TimeAxis, fs: number): AP
-  wav2world(x: X, fs: number, frame_period?: number): [F0, SP, AP]
+  cheaptrick(x: X, f0: F0, t: TimeAxis, fs: number): CheapTrickResult
+  d4c(x: X, f0: F0, t: TimeAxis, fs: number, fft_size: number): D4CResult
+  wav2world(x: X, fs: number, frame_period?: number): WorldResult
   synthesis(f0: F0, spectrogram: SP, aperiodicity: AP, fs: number, frame_period?: number): Y
+  wavread(wav: ArrayBufferLike): { x: X, fs: number, nbit: number }
+  wavwrite(x: X, fs: number): Blob
+}
+
+const assertRet = (ret: number) => {
+  if (ret < 0) { throw new RangeError('invalid number') }
 }
 
 const { min } = Math
@@ -146,6 +166,9 @@ export class World implements WorldInterface {
           proc_exit(exit_code: number) { throw new Error('exit with exit code ' + exit_code) }
         },
         env: {
+          constructNotify(ptr: number) {
+            that.#ptrs[that.#ptrs.length] = ptr
+          },
           readFloat64Array(fd: number, ptr: number, length: number) {
             new Float64Array(buffer, ptr >>> 0, length).set(that.#context[fd])
           },
@@ -172,7 +195,7 @@ export class World implements WorldInterface {
           }
         }
       })
-      const { memory } = instance.exports as any
+      const memory = instance.exports.memory as WebAssembly.Memory
       let buffer: ArrayBufferLike = memory.buffer
       currentInstance = instance
       const that = new World(instance)
@@ -184,6 +207,7 @@ export class World implements WorldInterface {
   #exports: any
   #context: any
   #fds: any
+  #ptrs: number[] = []
   constructor(instance: WebAssembly.Instance) {
     if (currentInstance !== instance) {
       throw new TypeError('Illegal constructor.')
@@ -193,6 +217,10 @@ export class World implements WorldInterface {
     this.#context = null
     this.#fds = null
     this.#exports._initialize()
+  }
+  get memorySize() {
+    const memory = this.#instance.exports.memory as WebAssembly.Memory
+    return memory.buffer.byteLength
   }
   about(): string {
     try {
@@ -206,63 +234,95 @@ export class World implements WorldInterface {
   #init(fs: number, f0_floor: number = 0, f0_ceil: number = 0) {
     this.#exports._init_world(fs, f0_floor, f0_ceil)
   }
-  dio(x: X, fs: number, frame_period: number = 5, withStoneMask: boolean = false): [F0, TimeAxis] {
-    const context: any = this.#context = [x]
-    this.#init(fs)
-    this.#exports._dio(x.length, fs, frame_period, withStoneMask ? 1 : 0)
+  #destruct() {
     this.#context = null
-    return [context[2], context[1]]
+    this.#fds = null
+    for (const ptr of this.#ptrs) {
+      this.#exports._destruct(ptr)
+    }
+    this.#ptrs = []
   }
-  harvest(x: X, fs: number, frame_period: number = 5, withStoneMask: boolean = false): [F0, TimeAxis] {
-    const context: any = this.#context = [x]
-    this.#init(fs)
-    this.#exports._harvest(x.length, fs, frame_period, withStoneMask ? 1 : 0)
-    this.#context = null
-    return [context[2], context[1]]
+  dio(x: X, fs: number, frame_period: number = 5, withStoneMask: boolean = false): DioResult {
+    const x_length = x.length
+    try {
+      this.#context = [x]
+      this.#init(fs)
+      assertRet(this.#exports._dio(x_length, fs, frame_period, withStoneMask ? 1 : 0))
+      return { f0: this.#context[2], time_axis: this.#context[1] }
+    } finally {
+      this.#destruct()
+    }
+  }
+  harvest(x: X, fs: number, frame_period: number = 5, withStoneMask: boolean = false): DioResult {
+    const x_length = x.length
+    try {
+      this.#context = [x]
+      this.#init(fs)
+      assertRet(this.#exports._harvest(x_length, fs, frame_period, withStoneMask ? 1 : 0))
+      return { f0: this.#context[2], time_axis: this.#context[1] }
+    } finally {
+      this.#destruct()
+    }
   }
   stonemask(x: X, f0: F0, t: TimeAxis, fs: number): F0 {
-    const context: any = this.#context = [x, t, f0]
-    this.#exports._stonemask(x.length, fs, f0.length)
-    this.#context = null
-    return context[2]
+    const x_length = x.length, f0_length = f0.length
+    try {
+      this.#context = [x, t, f0]
+      assertRet(this.#exports._stonemask(x_length, fs, f0_length))
+      return this.#context[2]
+    } finally {
+      this.#destruct()
+    }
   }
-  cheaptrick(x: X, f0: F0, t: TimeAxis, fs: number): SP {
-    const context: any = this.#context = [x, t, f0]
-    this.#init(fs)
-    this.#exports._cheaptrick(x.length, fs, f0.length)
-    this.#context = null
-    return context[3]
+  cheaptrick(x: X, f0: F0, t: TimeAxis, fs: number): CheapTrickResult {
+    const x_length = x.length, f0_length = f0.length
+    try {
+      this.#context = [x, t, f0]
+      this.#init(fs)
+      const fft_size = this.#exports._cheaptrick(x_length, fs, f0_length)
+      assertRet(fft_size)
+      return { spectrogram: this.#context[3], fft_size }
+    } finally {
+      this.#destruct()
+    }
   }
-  d4c(x: X, f0: F0, t: TimeAxis, fs: number): AP {
-    const data: any = this.#context = [x, t, f0]
-    this.#init(fs)
-    this.#exports._d4c(x.length, fs, f0.length, 0)
-    this.#context = null
-    return data[4]
+  d4c(x: X, f0: F0, t: TimeAxis, fs: number, fft_size: number = 0): D4CResult {
+    const x_length = x.length, f0_length = f0.length
+    try {
+      this.#context = [x, t, f0]
+      this.#init(fs)
+      assertRet(this.#exports._d4c(x_length, fs, f0_length, fft_size))
+      return { aperiodicity: this.#context[4] }
+    } finally {
+      this.#destruct()
+    }
   }
-  wav2world(x: X, fs: number, frame_period: number = 5): [F0, SP, AP] {
-    const [_f0, t] = this.dio(x, fs, frame_period)
+  wav2world(x: X, fs: number, frame_period: number = 5): WorldResult {
+    const { f0: _f0, time_axis: t } = this.dio(x, fs, frame_period)
     const f0 = this.stonemask(x, _f0, t, fs)
-    const sp = this.cheaptrick(x, f0, t, fs)
-    const ap = this.d4c(x, f0, t, fs)
-    return [f0, sp, ap]
+    const { spectrogram, fft_size } = this.cheaptrick(x, f0, t, fs)
+    const { aperiodicity } = this.d4c(x, f0, t, fs)
+    return { time_axis: t, f0, fft_size, spectrogram, aperiodicity }
   }
   synthesis(f0: F0, spectrogram: SP, aperiodicity: AP, fs: number, frame_period: number = 5): Y {
     const f0_length = f0.length
-    if (f0_length != spectrogram.shape[0] || f0_length != aperiodicity.shape[0]) {
-      throw new TypeError(`Mismatched number of frames between F0 (${f0_length}), ` +
-        `spectrogram (${spectrogram.shape[0]}) and aperiodicty (${aperiodicity.shape[0]})`)
+    try {
+      if (f0_length != spectrogram.shape[0] || f0_length != aperiodicity.shape[0]) {
+        throw new TypeError(`Mismatched number of frames between F0 (${f0_length}), ` +
+          `spectrogram (${spectrogram.shape[0]}) and aperiodicty (${aperiodicity.shape[0]})`)
+      }
+      if (spectrogram.shape[1] != aperiodicity.shape[1]) {
+        throw new TypeError(`Mismatched dimensionality (spec size) between ` +
+          `spectrogram (${spectrogram.shape[1]}) and aperiodicity (${aperiodicity.shape[1]})`)
+      }
+      this.#context = [null, null, f0, spectrogram, aperiodicity]
+      assertRet(this.#exports._synthesis(f0_length, (spectrogram.shape[1] - 1) * 2, fs, frame_period))
+      return this.#context[0]
+    } finally {
+      this.#destruct()
     }
-    if (spectrogram.shape[1] != aperiodicity.shape[1]) {
-      throw new TypeError(`Mismatched dimensionality (spec size) between ` +
-        `spectrogram (${spectrogram.shape[1]}) and aperiodicity (${aperiodicity.shape[1]})`)
-    }
-    const context: any = this.#context = [null, null, f0, spectrogram, aperiodicity]
-    this.#exports._synthesis(f0_length, (spectrogram.shape[1] - 1) * 2, fs, frame_period)
-    this.#context = null
-    return context[0]
   }
-  wavread(wav: ArrayBufferLike): [X, number] {
+  wavread(wav: ArrayBufferLike): { x: X, fs: number, nbit: number } {
     try {
       this.#context = [null]
       this.#fds = [
@@ -273,13 +333,13 @@ export class World implements WorldInterface {
       if (x_length > 0) {
         const fs = this.#exports._wavread(x_length)
         if (fs > 0) {
-          return [this.#context[0], fs]
+          const x = this.#context[0], meta = this.#context[1]
+          return { x, fs, nbit: meta[1] }
         }
       }
-      throw new TypeError(this.#fds[1].getText().trim())
+      throw new TypeError(this.#fds[1].getText().trim() || 'Unknown Error')
     } finally {
-      this.#context = null
-      this.#fds = null
+      this.#destruct()
     }
   }
   wavwrite(x: X, fs: number): Blob {
@@ -294,10 +354,9 @@ export class World implements WorldInterface {
       if (file.size > 0) {
         return new Blob([file.getData()], { type: 'audio/wave' })
       }
-      throw new TypeError(this.#fds[1].getText().trim())
+      throw new TypeError(this.#fds[1].getText().trim() || 'Unknown Error')
     } finally {
-      this.#context = null
-      this.#fds = null
+      this.#destruct()
     }
   }
 }

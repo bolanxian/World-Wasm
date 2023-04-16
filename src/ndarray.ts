@@ -1,9 +1,9 @@
 
-const types = {
+const types = Object.freeze({
   int8: Int8Array, uint8: Uint8Array, int16: Int16Array, uint16: Uint16Array,
   int32: Int32Array, uint32: Uint32Array, int64: BigInt64Array, uint64: BigUint64Array,
   float32: Float32Array, float64: Float64Array, uint8Clamped: Uint8ClampedArray
-} as const
+})
 export type Types = keyof typeof types
 export type TypedArrayConstructor<T extends Types = Types> = typeof types[T]
 export type TypedArray<T extends Types = Types> = InstanceType<TypedArrayConstructor<T>>
@@ -115,7 +115,7 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
     shape[0] = array.length
     array.shape = Object.freeze(shape)
     array.offset = this.offset + begin * shape.slice(1).reduce(mul, 1)
-    return Object.freeze<this>(array as this)
+    return Object.freeze(array as this)
   }
   reshape(shape: number | number[]): TypedArray | Ndarray {
     if (arguments.length > 1) {
@@ -148,7 +148,7 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
     }
   }
   static unpack<T extends Ndarray | TypedArray>(array: NdarrayPacked): T {
-    let { buffer, shape, dtype } = array
+    const { buffer, shape, dtype } = array
     const { byteOffset, byteLength } = buffer
     const Ctor = typeToCtor.get(dtype) as TypedArrayConstructor
     return this.create(new Ctor(buffer.buffer.slice(byteOffset, byteOffset + byteLength)), shape) as T

@@ -19,6 +19,80 @@
 #include "world/synthesis.h"
 #include "tools/audioio.h"
 
+class Notifiable;
+EM_JS(void, constructNotify, (Notifiable * ptr), {})
+EM_JS(void, readFloat64Array, (int fd, double *ptr, int length), {})
+EM_JS(void, writeFloat64Array, (int fd, double *ptr, int length), {})
+EM_JS(void, readFloat64Array2D, (int fd, double *const *ptr, int width, int height), {})
+EM_JS(void, writeFloat64Array2D, (int fd, double *const *ptr, int width, int height), {})
+
+class Notifiable
+{
+public:
+  Notifiable() { constructNotify(this); }
+  virtual ~Notifiable() {}
+};
+class Float64Array : Notifiable
+{
+public:
+  const int length;
+  double *const ptr;
+  Float64Array(int length) : length(length), ptr(new double[length]), Notifiable() {}
+  auto read(int fd)
+  {
+    readFloat64Array(fd, ptr, length);
+    return this;
+  }
+  auto read(int fd, int length)
+  {
+    readFloat64Array(fd, ptr, length);
+    return this;
+  }
+  auto write(int fd)
+  {
+    writeFloat64Array(fd, ptr, length);
+  }
+  auto write(int fd, int length)
+  {
+    writeFloat64Array(fd, ptr, length);
+  }
+  ~Float64Array() override
+  {
+    delete[] ptr;
+  }
+};
+class Float64Array2D : Notifiable
+{
+public:
+  const int width, height;
+  double *const *const ptr;
+  Float64Array2D(int width, int height)
+      : width(width), height(height), ptr(new double *[width]), Notifiable()
+  {
+    for (int i = 0; i < width; i++)
+    {
+      const_cast<double **>(ptr)[i] = new double[height];
+    }
+  }
+  auto read(int fd)
+  {
+    readFloat64Array2D(fd, ptr, width, height);
+    return this;
+  }
+  auto write(int fd)
+  {
+    writeFloat64Array2D(fd, ptr, width, height);
+  }
+  ~Float64Array2D() override
+  {
+    for (int i = 0; i < width; i++)
+    {
+      delete[] ptr[i];
+    }
+    delete[] ptr;
+  }
+};
+
 extern "C"
 {
   // from emsdk/upstream/emscripten/system/lib/standalone/standalone.c
@@ -75,33 +149,18 @@ extern "C"
     PRINTSIZE(HarvestOption);
     PRINTSIZE(CheapTrickOption);
     PRINTSIZE(D4COption);
+    PRINTSIZE(Notifiable);
+    PRINTSIZE(Float64Array);
+    PRINTSIZE(Float64Array2D);
 #undef PRINTDEF
 #undef PRINTSIZE
     return 0;
   }
 
-  EMSCRIPTEN_KEEPALIVE inline double **createFloat64Array2D(int x, int y)
+  EMSCRIPTEN_KEEPALIVE void _destruct(Notifiable *ptr)
   {
-    double **array = new double *[x];
-    for (int i = 0; i < x; i++)
-    {
-      array[i] = new double[y];
-    }
-    return array;
+    delete ptr;
   }
-  EMSCRIPTEN_KEEPALIVE inline void deleteFloat64Array2D(double **ptr, int x)
-  {
-    for (int i = 0; i < x; i++)
-    {
-      delete[] ptr[i];
-    }
-    delete[] ptr;
-  }
-
-  EM_JS(void, readFloat64Array, (int fd, double *ptr, int length), {})
-  EM_JS(void, writeFloat64Array, (int fd, double *ptr, int length), {})
-  EM_JS(void, readFloat64Array2D, (int fd, double **ptr, int x, int y), {})
-  EM_JS(void, writeFloat64Array2D, (int fd, double **ptr, int x, int y), {})
 
   EMSCRIPTEN_KEEPALIVE int _wavreadlength()
   {
@@ -111,27 +170,29 @@ extern "C"
   }
   EMSCRIPTEN_KEEPALIVE int _wavread(int x_length)
   {
+    if (x_length < 1)
+      return -1;
     const char *path = "sample.wav";
-    int fs, nbit;
-    double *x = new double[x_length > 2 ? x_length : 2];
-    wavread(path, &fs, &nbit, x);
+    int fs = 0, nbit = 0;
+    auto x = new Float64Array(x_length > 2 ? x_length : 2);
+    wavread(path, &fs, &nbit, x->ptr);
     if (fs > 0)
     {
-      writeFloat64Array(0, x, x_length);
-      x[0] = fs;
-      x[1] = nbit;
-      writeFloat64Array(1, x, 2);
+      x->write(0, x_length);
+      x->ptr[0] = fs;
+      x->ptr[1] = nbit;
+      x->write(1, 2);
     }
-    delete[] x;
     return fs;
   }
-  EMSCRIPTEN_KEEPALIVE void _wavwrite(int x_length, int fs)
+  EMSCRIPTEN_KEEPALIVE int _wavwrite(int x_length, int fs)
   {
+    if (x_length < 1 || fs < 1)
+      return -1;
     const char *path = "sample.wav";
-    double *x = new double[x_length];
-    readFloat64Array(0, x, x_length);
-    wavwrite(x, x_length, fs, 16, path);
-    delete[] x;
+    auto x = (new Float64Array(x_length))->read(0);
+    wavwrite(x->ptr, x_length, fs, 16, path);
+    return 0;
   }
 
   DioOption dioOption = {0};
@@ -141,6 +202,8 @@ extern "C"
 
   EMSCRIPTEN_KEEPALIVE int _init_world(int fs, double f0_floor, double f0_ceil)
   {
+    if (fs < 1)
+      return -1;
     InitializeDioOption(&dioOption);
     InitializeHarvestOption(&harvestOption);
     InitializeCheapTrickOption(fs, &cheapTrickOption);
@@ -160,140 +223,113 @@ extern "C"
     return cheapTrickOption.fft_size;
   }
 
-  EMSCRIPTEN_KEEPALIVE void _dio(int x_length, int fs, double frame_period, int withStoneMask)
+  EMSCRIPTEN_KEEPALIVE int _dio(int x_length, int fs, double frame_period, int withStoneMask)
   {
-    double *x = new double[x_length];
-    readFloat64Array(0, x, x_length);
+    if (x_length < 1 || fs < 1 || frame_period < 1)
+      return -1;
+    auto x = (new Float64Array(x_length))->read(0);
     dioOption.frame_period = frame_period;
     int f0_length = GetSamplesForDIO(fs, x_length, dioOption.frame_period);
-    double *t = new double[f0_length];
-    double *f0 = new double[f0_length];
-    Dio(x, x_length, fs, &dioOption, t, f0);
-    writeFloat64Array(1, t, f0_length);
+    if (f0_length < 1)
+      return -1;
+    auto t = new Float64Array(f0_length);
+    auto f0 = new Float64Array(f0_length);
+    Dio(x->ptr, x_length, fs, &dioOption, t->ptr, f0->ptr);
+    t->write(1);
     if (withStoneMask)
     {
-      double *refined_f0 = new double[f0_length];
-      StoneMask(x, x_length, fs, t, f0, f0_length, refined_f0);
-      writeFloat64Array(2, refined_f0, f0_length);
-      delete[] refined_f0;
+      auto refined_f0 = new Float64Array(f0_length);
+      StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
+      refined_f0->write(2);
     }
     else
     {
-      writeFloat64Array(2, f0, f0_length);
+      f0->write(2);
     }
-    delete[] x;
-    delete[] t;
-    delete[] f0;
+    return 0;
   }
 
-  EMSCRIPTEN_KEEPALIVE void _harvest(int x_length, int fs, double frame_period, int withStoneMask)
+  EMSCRIPTEN_KEEPALIVE int _harvest(int x_length, int fs, double frame_period, int withStoneMask)
   {
-    double *x = new double[x_length];
-    readFloat64Array(0, x, x_length);
+    if (x_length < 1 || fs < 1 || frame_period < 1)
+      return -1;
+    auto x = (new Float64Array(x_length))->read(0);
     harvestOption.frame_period = frame_period;
     int f0_length = GetSamplesForHarvest(fs, x_length, dioOption.frame_period);
-    double *t = new double[f0_length];
-    double *f0 = new double[f0_length];
-    Harvest(x, x_length, fs, &harvestOption, t, f0);
-    writeFloat64Array(1, t, f0_length);
+    if (f0_length < 1)
+      return -1;
+    auto t = new Float64Array(f0_length);
+    auto f0 = new Float64Array(f0_length);
+    Harvest(x->ptr, x_length, fs, &harvestOption, t->ptr, f0->ptr);
+    t->write(1);
     if (withStoneMask)
     {
-      double *refined_f0 = new double[f0_length];
-      StoneMask(x, x_length, fs, t, f0, f0_length, refined_f0);
-      writeFloat64Array(2, refined_f0, f0_length);
-      delete[] refined_f0;
+      auto refined_f0 = new Float64Array(f0_length);
+      StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
+      refined_f0->write(2);
     }
     else
     {
-      writeFloat64Array(2, f0, f0_length);
+      f0->write(2);
     }
-    delete[] x;
-    delete[] t;
-    delete[] f0;
+    return 0;
   }
 
-  EMSCRIPTEN_KEEPALIVE void _stonemask(int x_length, int fs, int f0_length)
+  EMSCRIPTEN_KEEPALIVE int _stonemask(int x_length, int fs, int f0_length)
   {
-    double *x = new double[x_length];
-    double *t = new double[f0_length];
-    double *f0 = new double[f0_length];
-    double *refined_f0 = new double[f0_length];
-    readFloat64Array(0, x, x_length);
-    readFloat64Array(1, t, f0_length);
-    readFloat64Array(2, f0, f0_length);
-    StoneMask(x, x_length, fs, t, f0, f0_length, refined_f0);
-    writeFloat64Array(2, refined_f0, f0_length);
-    delete[] x;
-    delete[] t;
-    delete[] f0;
-    delete[] refined_f0;
+    if (x_length < 1 || fs < 1 || f0_length < 1)
+      return -1;
+    auto x = (new Float64Array(x_length))->read(0);
+    auto t = (new Float64Array(f0_length))->read(1);
+    auto f0 = (new Float64Array(f0_length))->read(2);
+    auto refined_f0 = new Float64Array(f0_length);
+    StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
+    refined_f0->write(2);
+    return 0;
   }
 
   EMSCRIPTEN_KEEPALIVE int _cheaptrick(int x_length, int fs, int f0_length)
   {
-    double *x = new double[x_length];
-    double *t = new double[f0_length];
-    double *f0 = new double[f0_length];
-    readFloat64Array(0, x, x_length);
-    readFloat64Array(1, t, f0_length);
-    readFloat64Array(2, f0, f0_length);
+    if (x_length < 1 || fs < 1 || f0_length < 1)
+      return -1;
+    auto x = (new Float64Array(x_length))->read(0);
+    auto t = (new Float64Array(f0_length))->read(1);
+    auto f0 = (new Float64Array(f0_length))->read(2);
     int fft_size = cheapTrickOption.fft_size = GetFFTSizeForCheapTrick(fs, &cheapTrickOption);
-    double **spectrogram = createFloat64Array2D(f0_length, fft_size / 2 + 1);
-    CheapTrick(x, x_length, fs, t, f0, f0_length, &cheapTrickOption, spectrogram);
-    writeFloat64Array2D(3, spectrogram, f0_length, fft_size / 2 + 1);
-    deleteFloat64Array2D(spectrogram, f0_length);
-    delete[] x;
-    delete[] t;
-    delete[] f0;
+    auto spectrogram = new Float64Array2D(f0_length, fft_size / 2 + 1);
+    CheapTrick(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, &cheapTrickOption, const_cast<double **>(spectrogram->ptr));
+    spectrogram->write(3);
     return fft_size;
   }
 
-  EMSCRIPTEN_KEEPALIVE void _d4c(int x_length, int fs, int f0_length, int fft_size)
+  EMSCRIPTEN_KEEPALIVE int _d4c(int x_length, int fs, int f0_length, int fft_size)
   {
-    double *x = new double[x_length];
-    double *t = new double[f0_length];
-    double *f0 = new double[f0_length];
-    readFloat64Array(0, x, x_length);
-    readFloat64Array(1, t, f0_length);
-    readFloat64Array(2, f0, f0_length);
-    if (fft_size <= 0)
+    if (x_length < 1 || fs < 1 || f0_length < 1)
+      return -1;
+    auto x = (new Float64Array(x_length))->read(0);
+    auto t = (new Float64Array(f0_length))->read(1);
+    auto f0 = (new Float64Array(f0_length))->read(2);
+    if (fft_size < 1)
     {
       fft_size = GetFFTSizeForCheapTrick(fs, &cheapTrickOption);
     }
-    double **aperiodicity = createFloat64Array2D(f0_length, fft_size / 2 + 1);
-    D4C(x, x_length, fs, t, f0, f0_length, fft_size, &d4cOption, aperiodicity);
-    writeFloat64Array2D(4, aperiodicity, f0_length, fft_size / 2 + 1);
-    deleteFloat64Array2D(aperiodicity, f0_length);
-    delete[] x;
-    delete[] t;
-    delete[] f0;
+    auto aperiodicity = new Float64Array2D(f0_length, fft_size / 2 + 1);
+    D4C(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, fft_size, &d4cOption, const_cast<double **>(aperiodicity->ptr));
+    aperiodicity->write(4);
+    return 0;
   }
 
-  EMSCRIPTEN_KEEPALIVE void _synthesis(int f0_length, int fft_size, int fs, int frame_period)
+  EMSCRIPTEN_KEEPALIVE int _synthesis(int f0_length, int fft_size, int fs, int frame_period)
   {
-    double *f0 = new double[f0_length];
-    double **aperiodicity = new double *[f0_length];
-    double **spectrogram = new double *[f0_length];
-    for (int i = 0; i < f0_length; i++)
-    {
-      spectrogram[i] = new double[fft_size / 2 + 1];
-      aperiodicity[i] = new double[fft_size / 2 + 1];
-    }
-    readFloat64Array(2, f0, f0_length);
-    readFloat64Array2D(3, spectrogram, f0_length, fft_size / 2 + 1);
-    readFloat64Array2D(4, aperiodicity, f0_length, fft_size / 2 + 1);
+    if (f0_length < 1 || fft_size < 1 || fs < 1 || frame_period < 1)
+      return -1;
+    auto f0 = (new Float64Array(f0_length))->read(2);
+    auto spectrogram = (new Float64Array2D(f0_length, fft_size / 2 + 1))->read(3);
+    auto aperiodicity = (new Float64Array2D(f0_length, fft_size / 2 + 1))->read(4);
     int y_length = static_cast<int>((f0_length - 1) * frame_period / 1000.0 * fs) + 1;
-    double *y = new double[y_length];
-    Synthesis(f0, f0_length, spectrogram, aperiodicity, fft_size, frame_period, fs, y_length, y);
-    writeFloat64Array(0, y, y_length);
-    for (int i = 0; i < f0_length; i++)
-    {
-      delete[] spectrogram[i];
-      delete[] aperiodicity[i];
-    }
-    delete[] spectrogram;
-    delete[] aperiodicity;
-    delete[] f0;
-    delete[] y;
+    auto y = new Float64Array(y_length);
+    Synthesis(f0->ptr, f0_length, spectrogram->ptr, aperiodicity->ptr, fft_size, frame_period, fs, y_length, y->ptr);
+    y->write(0);
+    return 0;
   }
 }

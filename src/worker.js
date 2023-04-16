@@ -1,6 +1,6 @@
 
-import { Ndarray } from "./ndarray";
-import { createWorld } from "./world";
+import { Ndarray } from './ndarray'
+import { createWorld } from './world'
 
 self.addEventListener('message', async (e) => {
   try {
@@ -10,10 +10,16 @@ self.addEventListener('message', async (e) => {
     let [result, transfer] = await functionToRun({ Ndarray, world }, data.args)
     postMessage(result, transfer)
   } catch (error) {
-    if (typeof error === 'string') {
-      postMessage({ error })
-    } else {
-      postMessage({ error: error?.message ?? 'error' })
-    }
+    try {
+      postMessage({ error: error ?? 'Unknown Error' })
+      return
+    } catch (e1) { }
+    try {
+      let { name, message, stack } = error
+      message ??= 'Unknown Error'
+      postMessage({ error: { name, message, stack } })
+      return
+    } catch (e2) { }
+    postMessage({ error: { message: 'Unknown Error' } })
   }
 }, { once: !0 })
