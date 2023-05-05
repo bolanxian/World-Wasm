@@ -34,25 +34,34 @@ public:
 };
 class Float64Array : Notifiable
 {
+  Float64Array(double *ptr, int length) : ptr(ptr), length(length), Notifiable() {}
+
 public:
-  const int length;
   double *const ptr;
-  Float64Array(int length) : length(length), ptr(new double[length]), Notifiable() {}
-  auto read(int fd)
+  const int length;
+  static auto create(int length)
+  {
+    return new Float64Array(new double[length], length);
+  }
+  static auto from(int fd, int length)
+  {
+    auto array = Float64Array::create(length);
+    readFloat64Array(fd, array->ptr, length);
+    return array;
+  }
+  void read(int fd)
   {
     readFloat64Array(fd, ptr, length);
-    return this;
   }
-  auto read(int fd, int length)
+  void read(int fd, int length)
   {
     readFloat64Array(fd, ptr, length);
-    return this;
   }
-  auto write(int fd)
+  void write(int fd)
   {
     writeFloat64Array(fd, ptr, length);
   }
-  auto write(int fd, int length)
+  void write(int fd, int length)
   {
     writeFloat64Array(fd, ptr, length);
   }
@@ -63,23 +72,32 @@ public:
 };
 class Float64Array2D : Notifiable
 {
+  Float64Array2D(double *const *ptr, int width, int height)
+      : ptr(ptr), width(width), height(height), Notifiable() {}
+
 public:
-  const int width, height;
   double *const *const ptr;
-  Float64Array2D(int width, int height)
-      : width(width), height(height), ptr(new double *[width]), Notifiable()
+  const int width, height;
+  static auto create(int width, int height)
   {
+    auto ptr = new double *[width];
     for (int i = 0; i < width; i++)
     {
-      const_cast<double **>(ptr)[i] = new double[height];
+      ptr[i] = new double[height];
     }
+    return new Float64Array2D(ptr, width, height);
   }
-  auto read(int fd)
+  static auto from(int fd, int width, int height)
+  {
+    auto array = Float64Array2D::create(width, height);
+    readFloat64Array2D(fd, array->ptr, width, height);
+    return array;
+  }
+  void read(int fd)
   {
     readFloat64Array2D(fd, ptr, width, height);
-    return this;
   }
-  auto write(int fd)
+  void write(int fd)
   {
     writeFloat64Array2D(fd, ptr, width, height);
   }
@@ -174,7 +192,7 @@ extern "C"
       return -1;
     const char *path = "sample.wav";
     int fs = 0, nbit = 0;
-    auto x = new Float64Array(x_length > 2 ? x_length : 2);
+    auto x = Float64Array::create(x_length > 2 ? x_length : 2);
     wavread(path, &fs, &nbit, x->ptr);
     if (fs > 0)
     {
@@ -190,7 +208,7 @@ extern "C"
     if (x_length < 1 || fs < 1)
       return -1;
     const char *path = "sample.wav";
-    auto x = (new Float64Array(x_length))->read(0);
+    auto x = Float64Array::from(0, x_length);
     wavwrite(x->ptr, x_length, fs, 16, path);
     return 0;
   }
@@ -227,18 +245,18 @@ extern "C"
   {
     if (x_length < 1 || fs < 1 || frame_period < 1)
       return -1;
-    auto x = (new Float64Array(x_length))->read(0);
+    auto x = Float64Array::from(0, x_length);
     dioOption.frame_period = frame_period;
     int f0_length = GetSamplesForDIO(fs, x_length, dioOption.frame_period);
     if (f0_length < 1)
       return -1;
-    auto t = new Float64Array(f0_length);
-    auto f0 = new Float64Array(f0_length);
+    auto t = Float64Array::create(f0_length);
+    auto f0 = Float64Array::create(f0_length);
     Dio(x->ptr, x_length, fs, &dioOption, t->ptr, f0->ptr);
     t->write(1);
     if (withStoneMask)
     {
-      auto refined_f0 = new Float64Array(f0_length);
+      auto refined_f0 = Float64Array::create(f0_length);
       StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
       refined_f0->write(2);
     }
@@ -253,18 +271,18 @@ extern "C"
   {
     if (x_length < 1 || fs < 1 || frame_period < 1)
       return -1;
-    auto x = (new Float64Array(x_length))->read(0);
+    auto x = Float64Array::from(0, x_length);
     harvestOption.frame_period = frame_period;
     int f0_length = GetSamplesForHarvest(fs, x_length, dioOption.frame_period);
     if (f0_length < 1)
       return -1;
-    auto t = new Float64Array(f0_length);
-    auto f0 = new Float64Array(f0_length);
+    auto t = Float64Array::create(f0_length);
+    auto f0 = Float64Array::create(f0_length);
     Harvest(x->ptr, x_length, fs, &harvestOption, t->ptr, f0->ptr);
     t->write(1);
     if (withStoneMask)
     {
-      auto refined_f0 = new Float64Array(f0_length);
+      auto refined_f0 = Float64Array::create(f0_length);
       StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
       refined_f0->write(2);
     }
@@ -279,10 +297,10 @@ extern "C"
   {
     if (x_length < 1 || fs < 1 || f0_length < 1)
       return -1;
-    auto x = (new Float64Array(x_length))->read(0);
-    auto t = (new Float64Array(f0_length))->read(1);
-    auto f0 = (new Float64Array(f0_length))->read(2);
-    auto refined_f0 = new Float64Array(f0_length);
+    auto x = Float64Array::from(0, x_length);
+    auto t = Float64Array::from(1, f0_length);
+    auto f0 = Float64Array::from(2, f0_length);
+    auto refined_f0 = Float64Array::create(f0_length);
     StoneMask(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, refined_f0->ptr);
     refined_f0->write(2);
     return 0;
@@ -292,11 +310,11 @@ extern "C"
   {
     if (x_length < 1 || fs < 1 || f0_length < 1)
       return -1;
-    auto x = (new Float64Array(x_length))->read(0);
-    auto t = (new Float64Array(f0_length))->read(1);
-    auto f0 = (new Float64Array(f0_length))->read(2);
+    auto x = Float64Array::from(0, x_length);
+    auto t = Float64Array::from(1, f0_length);
+    auto f0 = Float64Array::from(2, f0_length);
     int fft_size = cheapTrickOption.fft_size = GetFFTSizeForCheapTrick(fs, &cheapTrickOption);
-    auto spectrogram = new Float64Array2D(f0_length, fft_size / 2 + 1);
+    auto spectrogram = Float64Array2D::create(f0_length, fft_size / 2 + 1);
     CheapTrick(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, &cheapTrickOption, const_cast<double **>(spectrogram->ptr));
     spectrogram->write(3);
     return fft_size;
@@ -306,14 +324,14 @@ extern "C"
   {
     if (x_length < 1 || fs < 1 || f0_length < 1)
       return -1;
-    auto x = (new Float64Array(x_length))->read(0);
-    auto t = (new Float64Array(f0_length))->read(1);
-    auto f0 = (new Float64Array(f0_length))->read(2);
+    auto x = Float64Array::from(0, x_length);
+    auto t = Float64Array::from(1, f0_length);
+    auto f0 = Float64Array::from(2, f0_length);
     if (fft_size < 1)
     {
       fft_size = GetFFTSizeForCheapTrick(fs, &cheapTrickOption);
     }
-    auto aperiodicity = new Float64Array2D(f0_length, fft_size / 2 + 1);
+    auto aperiodicity = Float64Array2D::create(f0_length, fft_size / 2 + 1);
     D4C(x->ptr, x_length, fs, t->ptr, f0->ptr, f0_length, fft_size, &d4cOption, const_cast<double **>(aperiodicity->ptr));
     aperiodicity->write(4);
     return 0;
@@ -323,11 +341,11 @@ extern "C"
   {
     if (f0_length < 1 || fft_size < 1 || fs < 1 || frame_period < 1)
       return -1;
-    auto f0 = (new Float64Array(f0_length))->read(2);
-    auto spectrogram = (new Float64Array2D(f0_length, fft_size / 2 + 1))->read(3);
-    auto aperiodicity = (new Float64Array2D(f0_length, fft_size / 2 + 1))->read(4);
+    auto f0 = Float64Array::from(2, f0_length);
+    auto spectrogram = Float64Array2D::from(3, f0_length, fft_size / 2 + 1);
+    auto aperiodicity = Float64Array2D::from(4, f0_length, fft_size / 2 + 1);
     int y_length = static_cast<int>((f0_length - 1) * frame_period / 1000.0 * fs) + 1;
-    auto y = new Float64Array(y_length);
+    auto y = Float64Array::create(y_length);
     Synthesis(f0->ptr, f0_length, spectrogram->ptr, aperiodicity->ptr, fft_size, frame_period, fs, y_length, y->ptr);
     y->write(0);
     return 0;

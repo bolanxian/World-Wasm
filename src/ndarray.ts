@@ -12,7 +12,11 @@ export const TypedArray = Object.getPrototypeOf(Uint8Array) as TypedArrayConstru
 const typedArray = TypedArray.prototype
 
 type __TypeNdarray<N extends number, T extends TypedArray, A extends unknown[], K>
-  = A['length'] extends N ? K : __TypeNdarray<N, T, [...A, N], Ndarray<T> & Array<K> & { shape: [...A, A[0]] }>
+  = A['length'] extends N ? K : __TypeNdarray<N, T, [...A, number], Readonly<Ndarray & Array<K> & {
+    buffer: T
+    shape: Readonly<[...A, number]>
+    ndim: N
+  }>>
 type _TypeNdarray<N extends number, T extends TypedArray = TypedArray> = __TypeNdarray<N, T, [number], T>
 export type TypeNdarray<N extends number, T extends Types = Types> = _TypeNdarray<N, TypedArray<T>>
 export type NdarrayPacked = {
@@ -32,7 +36,7 @@ for (const [name, Ctor] of Object.entries(types) as [Types, TypedArrayConstructo
 
 const { call } = Function.prototype, mul = (a: number, b: number): number => a * b
 const _subarray = call.bind(typedArray.subarray) as <T extends TypedArray>(thisArg: T, begin?: number, end?: number) => T
-export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
+export class Ndarray extends Array<unknown>{
   static isNdarray<N extends number, T extends Types>(
     ndarray: any, ndim: N, dtype?: T
   ): ndarray is TypeNdarray<N, T> {
@@ -91,12 +95,9 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
     return this._reshape(buffer, shape, offset)
   }
 
-  declare readonly buffer: T
+  declare readonly buffer: TypedArray
   declare readonly shape: readonly number[]
   declare readonly offset: number
-
-  readonly [i: number]: unknown
-  declare readonly length: number
 
   constructor(n: number) {
     super(n)
@@ -143,14 +144,14 @@ export class Ndarray<T extends TypedArray = TypedArray> extends Array<unknown>{
     }
     const { buffer, byteOffset, byteLength, constructor: Ctor } = array
     return {
-      shape, dtype: ctorToType.get(Ctor as TypedArrayConstructor) as Types,
+      shape, dtype: ctorToType.get(Ctor as TypedArrayConstructor)!,
       buffer: new Uint8Array(buffer, byteOffset, byteLength)
     }
   }
   static unpack<T extends Ndarray | TypedArray>(array: NdarrayPacked): T {
     const { buffer, shape, dtype } = array
     const { byteOffset, byteLength } = buffer
-    const Ctor = typeToCtor.get(dtype) as TypedArrayConstructor
+    const Ctor = typeToCtor.get(dtype)!
     return this.create(new Ctor(buffer.buffer.slice(byteOffset, byteOffset + byteLength)), shape) as T
   }
 }

@@ -9,8 +9,8 @@ World-Wasm 是用于浏览器和Node.js的 `WORLD Vocoder`
 ## API
 ### 引入
 ```javascript
-//npm install github:bolanxian/World-Wasm
 import * as WORLD from 'world-wasm'
+import * as WORLD from 'world-wasm/src/main'//vite
 const wav = await (await fetch('./vaiueo2d.wav')).arrayBuffer()
 ```
 ### 同步API

@@ -20,7 +20,7 @@ if not exist "temp/main.o" (
   emcc -c -o "temp/main.o" "src/main.cpp" %CFLAGS%
 )
 
-emcc %CFLAGS% %EMCC_FLAGS% -o "temp/world.wasm" ^
+emcc %CFLAGS% %EMCC_FLAGS% -o "deps/world.wasm" ^
 temp/matlabfunctions.o ^
 temp/common.o ^
 temp/fft.o ^

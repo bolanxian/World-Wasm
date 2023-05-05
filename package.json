@@ -3,17 +3,31 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "main": "dist/world-wasm.js",
-  "types": "dist/world-wasm.d.ts",
+  "main": "./dist/world-wasm.js",
+  "types": "./dist/world-wasm.d.ts",
+  "files": [
+    "src",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/world-wasm.js",
+      "types": "./dist/world-wasm.d.ts"
+    },
+    "./main": "./src/main.ts",
+    "./ndarray": "./src/ndarray.ts",
+    "./src/main": "./src/main.ts",
+    "./src/ndarray": "./src/ndarray.ts",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
-    "typescript": "^4.9.3",
-    "vite": "^4.2.0",
-    "vite-plugin-dts": "^2.1.0"
-  },
-  "dependencies": {}
+    "typescript": "^4.9.5",
+    "vite": "^4.3.4",
+    "vite-plugin-dts": "^2.3.0"
+  }
 }
