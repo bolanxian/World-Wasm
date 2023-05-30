@@ -143,7 +143,7 @@ extern "C"
     printf("World Vocoder for WebAssembly\n");
     printf("Emscripten %d.%d.%d\n", __EMSCRIPTEN_major__, __EMSCRIPTEN_minor__, __EMSCRIPTEN_tiny__);
     printf(__VERSION__ "\n");
-    printf("Compiled: " __DATE__ " " __TIME__ "\n");
+    printf("Compiled: " __DATE__ "\n");
     printf("__cplusplus = %ld\n", __cplusplus);
     PRINTDEF(__wasm__);
     PRINTDEF(__ORDER_BIG_ENDIAN__);
