@@ -3,7 +3,7 @@ export { Ndarray } from './ndarray'
 import * as ndarray from './ndarray'
 export { ndarray }
 
-import { getModule } from './loader'
+import { isSupport, ready, getModule } from './loader'
 import { World, createWorld, WorldInterface } from './world'
 import { WorldAsync, createWorldAsync, WorldAsyncInterface } from './world-async'
 
@@ -14,5 +14,5 @@ export type {
 } from './world'
 export const create = async () => createWorld(await getModule())
 export const createAsync = createWorldAsync
-export { getModule, World, WorldAsync }
+export { isSupport, ready, getModule, World, WorldAsync }
 export { create as createWorld, createWorldAsync }

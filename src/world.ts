@@ -136,21 +136,21 @@ export class World implements WorldInterface {
       const instance = await _wai(module, {
         wasi_snapshot_preview1: {
           fd_read(fd: number, iovs_ptr: number, iovs_len: number, nread_ptr: number): number {
-            const file: WasiFile = that.#fds[fd]
+            const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let nread = file.read(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nread_ptr, 1)[0] = nread
             return 0
           },
           fd_write(fd: number, iovs_ptr: number, iovs_len: number, nwritten_ptr: number): number {
-            const file: WasiFile = that.#fds[fd]
+            const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let nwrite = file.write(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nwritten_ptr, 1)[0] = nwrite
             return 0
           },
           fd_seek(fd: number, offset: bigint, whence: number, offset_out_ptr: number): number {
-            const file: WasiFile = that.#fds[fd]
+            const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let new_offset = file.seek(Number(offset), whence)
             if (new_offset < 0) { return -ERRNO_INVAL }
@@ -158,9 +158,9 @@ export class World implements WorldInterface {
             return 0
           },
           fd_close(fd: number): number {
-            const file: WasiFile = that.#fds[fd]
+            const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
-            that.#fds[fd].seek(0, 0)
+            file.seek(0, 0)
             return 0
           },
           proc_exit(exit_code: number) { throw new Error('exit with exit code ' + exit_code) }
@@ -203,32 +203,30 @@ export class World implements WorldInterface {
       return that
     }
   }
-  #instance: WebAssembly.Instance
   #exports: any
   #context: any
-  #fds: any
+  #fds: (WasiFile | null)[]
   #ptrs: number[] = []
   constructor(instance: WebAssembly.Instance) {
     if (currentInstance !== instance) {
       throw new TypeError('Illegal constructor.')
     }
-    this.#instance = instance
     this.#exports = instance.exports
     this.#context = null
-    this.#fds = null
+    this.#fds = null!
     this.#exports._initialize()
   }
   get memorySize() {
-    const memory = this.#instance.exports.memory as WebAssembly.Memory
+    const memory = this.#exports.memory as WebAssembly.Memory
     return memory.buffer.byteLength
   }
   about(): string {
     try {
       this.#fds = [null, new WasiFile(8)]
       this.#exports._get_info()
-      return this.#fds[1].getText().trim()
+      return this.#fds[1]!.getText().trim()
     } finally {
-      this.#fds = null
+      this.#fds = null!
     }
   }
   #init(fs: number, f0_floor: number = 0, f0_ceil: number = 0) {
@@ -236,7 +234,7 @@ export class World implements WorldInterface {
   }
   #destruct() {
     this.#context = null
-    this.#fds = null
+    this.#fds = null!
     for (const ptr of this.#ptrs) {
       this.#exports._destruct(ptr)
     }
@@ -337,7 +335,7 @@ export class World implements WorldInterface {
           return { x, fs, nbit: meta[1] }
         }
       }
-      throw new TypeError(this.#fds[1].getText().trim() || 'Unknown Error')
+      throw new TypeError(this.#fds[1]!.getText().trim() || 'Unknown Error')
     } finally {
       this.#destruct()
     }
@@ -350,11 +348,11 @@ export class World implements WorldInterface {
         null, new WasiFile(256)
       ]
       this.#exports._wavwrite(x.length, fs)
-      const file: WasiFile = this.#fds[3]
+      const file = this.#fds[3]!
       if (file.size > 0) {
         return new Blob([file.getData()], { type: 'audio/wave' })
       }
-      throw new TypeError(this.#fds[1].getText().trim() || 'Unknown Error')
+      throw new TypeError(this.#fds[1]!.getText().trim() || 'Unknown Error')
     } finally {
       this.#destruct()
     }
