@@ -136,6 +136,7 @@ export class World implements WorldInterface {
       const instance = await _wai(module, {
         wasi_snapshot_preview1: {
           fd_read(fd: number, iovs_ptr: number, iovs_len: number, nread_ptr: number): number {
+            const buffer = memory.buffer
             const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let nread = file.read(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
@@ -143,6 +144,7 @@ export class World implements WorldInterface {
             return 0
           },
           fd_write(fd: number, iovs_ptr: number, iovs_len: number, nwritten_ptr: number): number {
+            const buffer = memory.buffer
             const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let nwrite = file.write(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
@@ -150,6 +152,7 @@ export class World implements WorldInterface {
             return 0
           },
           fd_seek(fd: number, offset: bigint, whence: number, offset_out_ptr: number): number {
+            const buffer = memory.buffer
             const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
             let new_offset = file.seek(Number(offset), whence)
@@ -157,6 +160,12 @@ export class World implements WorldInterface {
             new BigUint64Array(buffer, offset_out_ptr >>> 0, 1)[0] = BigInt(new_offset)
             return 0
           },
+          fd_fdstat_get(fd: number, stat_ptr: number): number {
+            const buffer = memory.buffer
+            new Uint8Array(buffer, stat_ptr, 1)[0] = 4
+            return 0
+          },
+          fd_fdstat_set_flags(fd: number, flags: number) { },
           fd_close(fd: number): number {
             const file = that.#fds[fd]
             if (file == null) { return -ERRNO_BADF }
@@ -170,13 +179,16 @@ export class World implements WorldInterface {
             that.#ptrs[that.#ptrs.length] = ptr
           },
           readFloat64Array(fd: number, ptr: number, length: number) {
+            const buffer = memory.buffer
             new Float64Array(buffer, ptr >>> 0, length).set(that.#context[fd])
           },
           writeFloat64Array(fd: number, ptr: number, length: number) {
+            const buffer = memory.buffer
             const buf = that.#context[fd] = new Float64Array(+length)
             buf.set(new Float64Array(buffer, ptr >>> 0, length))
           },
           readFloat64Array2D(fd: number, ptr: number, x: number, y: number) {
+            const buffer = memory.buffer
             const ptrs = new Uint32Array(buffer, ptr >>> 0, x)
             const array = that.#context[fd]
             let i = 0; for (; i < x; i++) {
@@ -184,6 +196,7 @@ export class World implements WorldInterface {
             }
           },
           writeFloat64Array2D(fd: number, ptr: number, x: number, y: number) {
+            const buffer = memory.buffer
             const ptrs = new Uint32Array(buffer, ptr >>> 0, x)
             const array = that.#context[fd] = Ndarray.create('float64', [x, y])
             let i = 0; for (; i < x; i++) {
@@ -191,12 +204,12 @@ export class World implements WorldInterface {
             }
           },
           emscripten_notify_memory_growth(memory_index: number) {
-            buffer = memory.buffer
+            // buffer = memory.buffer
           }
         }
       })
       const memory = instance.exports.memory as WebAssembly.Memory
-      let buffer: ArrayBufferLike = memory.buffer
+      // let buffer: ArrayBufferLike = memory.buffer
       currentInstance = instance
       const that = new World(instance)
       currentInstance = null

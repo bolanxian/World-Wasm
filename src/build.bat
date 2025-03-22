@@ -1,31 +1,34 @@
 
-
-call emsdk activate latest
-
+@echo off
+setlocal enabledelayedexpansion
 mkdir "temp"
-set "CFLAGS=-flto -I deps/World/src/ -I deps/World/ -O3"
-set "EMCC_FLAGS=--no-entry -s ALLOW_MEMORY_GROWTH -s INITIAL_MEMORY=131072"
+cd "temp"
+
+set "CC=zig c++"
+set "TARGET=wasm32-wasi"
+set "CFLAGS=-lc -lc++ -flto --target=%TARGET% -I ../deps/World/src/ -I ../deps/World/ -O3"
+set "ZFLAGS=-lc -lc++ -flto -target %TARGET% -I../deps/World/src/ -I../deps/World/ -O ReleaseSmall"
+set "WFLAGS=-mexec-model=reactor --initial-memory=17039360 -fno-builtin -fno-entry"
+set "EXPORTS=--export=_get_info --export=_init_world --export=_destruct --export=_wavreadlength --export=_wavread --export=_wavwrite"
+set "EXPORTS=%EXPORTS% --export=_dio --export=_harvest --export=_stonemask --export=_cheaptrick --export=_d4c --export=_synthesis"
+set "FILES=extern.o"
+
+echo on
+%CC% -c "../src/extern.cpp" -o "extern.o" %CFLAGS%
 
 for %%i in (matlabfunctions common fft dio harvest stonemask cheaptrick d4c synthesis) do (
-  if not exist "temp/%%i.o" (
-    call emcc -c -o "temp/%%i.o" "deps/World/src/%%i.cpp" %CFLAGS%
+  if not exist "%%i.o" (
+    %CC% -c "../src/extern.cpp" -D "__INNER__=""%%i.cpp""" -o "%%i.o" %CFLAGS%
   )
+  set "FILES=!FILES! %%i.o"
 )
-if not exist "temp/audioio.o" (
-  call emcc -c -o "temp/audioio.o" "deps/World/tools/audioio.cpp" %CFLAGS%
+for %%i in (audioio) do (
+  if not exist "%%i.o" (
+    %CC% -c "../src/extern.cpp" -D "__INNER__=""tools/%%i.cpp""" -o "%%i.o" %CFLAGS%
+  )
+  set "FILES=!FILES! %%i.o"
 )
 
-call emcc -c -o "temp/main.o" "src/main.cpp" %CFLAGS%
+zig build-exe "../src/main.zig" %FILES% %ZFLAGS% %WFLAGS% %EXPORTS%
 
-emcc %CFLAGS% %EMCC_FLAGS% -o "deps/world.wasm" ^
-temp/matlabfunctions.o ^
-temp/common.o ^
-temp/fft.o ^
-temp/dio.o ^
-temp/harvest.o ^
-temp/stonemask.o ^
-temp/cheaptrick.o ^
-temp/d4c.o ^
-temp/synthesis.o ^
-temp/audioio.o ^
-temp/main.o
+move "main.wasm" "../deps/world.wasm"

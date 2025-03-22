@@ -21,13 +21,15 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "deps": "cd deps && git clone https://github.com/mmorise/World.git",
+    "build": "\".\\src\\build.bat\"",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:vite": "tsc && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
-    "typescript": "^4.9.5",
-    "vite": "^4.3.4",
-    "vite-plugin-dts": "^2.3.0"
+    "typescript": "^5.8.2",
+    "vite": "^6.2.2",
+    "vite-plugin-dts": "^4.5.3"
   }
 }
