@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Fd = enum(usize) {
     x = 0,
@@ -8,11 +9,16 @@ const Fd = enum(usize) {
     aperiodicity = 4,
     _,
 };
-const Env = struct {
+const Env = if (builtin.cpu.arch.isWasm()) struct {
     extern "env" fn readFloat64Array(fd: Fd, ptr: [*]f64, length: usize) void;
     extern "env" fn writeFloat64Array(fd: Fd, ptr: [*]f64, length: usize) void;
     extern "env" fn readFloat64Array2D(fd: Fd, ptr: [*]const [*]f64, width: usize, height: usize) void;
     extern "env" fn writeFloat64Array2D(fd: Fd, ptr: [*]const [*]f64, width: usize, height: usize) void;
+} else struct {
+    fn readFloat64Array(_: Fd, _: [*]f64, _: usize) void {}
+    fn writeFloat64Array(_: Fd, _: [*]f64, _: usize) void {}
+    fn readFloat64Array2D(_: Fd, _: [*]const [*]f64, _: usize, _: usize) void {}
+    fn writeFloat64Array2D(_: Fd, _: [*]const [*]f64, _: usize, _: usize) void {}
 };
 const Float64Array = struct {
     const Self = @This();
@@ -25,64 +31,73 @@ const Float64Array = struct {
         Env.readFloat64Array(fd, array.data.ptr, length);
         return array;
     }
-    inline fn read(self: Self, fd: Fd) void {
+    inline fn read(self: *const Self, fd: Fd) void {
         Env.readFloat64Array(fd, self.data.ptr, self.data.len);
     }
-    inline fn write(self: Self, fd: Fd) void {
+    inline fn write(self: *const Self, fd: Fd) void {
         Env.writeFloat64Array(fd, self.data.ptr, self.data.len);
     }
-    inline fn writeLength(self: Self, fd: Fd, length: usize) void {
+    inline fn writeLength(self: *const Self, fd: Fd, length: usize) void {
         Env.writeFloat64Array(fd, self.data.ptr, length);
     }
-    inline fn deinit(self: Self, allocator: Allocator) void {
+    inline fn deinit(self: *const Self, allocator: Allocator) void {
         allocator.free(self.data);
+    }
+    test Self {
+        const allocator = std.testing.allocator;
+        const arr = try init(allocator, 32);
+        defer arr.deinit(allocator);
     }
 };
 const Float64Array2D = struct {
     const Self = @This();
-    data: []const []f64,
-    ptrs: []const [*]f64,
+    ptr: [*]const [*]f64,
     width: usize,
     height: usize,
     inline fn init(allocator: Allocator, width: usize, height: usize) !Self {
-        const data = try allocator.alloc([]f64, width);
-        errdefer allocator.free(data);
         const ptrs = try allocator.alloc([*]f64, width);
         errdefer allocator.free(ptrs);
-        var i: usize = undefined;
-        errdefer for (data[0..i]) |value| {
-            allocator.free(value);
-        };
-        for (data, ptrs, 0..) |*value, *ptr, num| {
+        var i: usize = 0;
+        errdefer for (ptrs[0..i]) |ptr|
+            allocator.free(ptr[0..height]);
+        for (ptrs, 1..) |*ptr, num| {
+            ptr.* = (try allocator.alloc(f64, height)).ptr;
             i = num;
-            value.* = try allocator.alloc(f64, height);
-            ptr.* = value.ptr;
         }
         return Self{
-            .data = data,
-            .ptrs = ptrs,
+            .ptr = ptrs.ptr,
             .width = width,
             .height = height,
         };
     }
     inline fn from(allocator: Allocator, width: usize, height: usize, fd: Fd) !Self {
         const self = try init(allocator, width, height);
-        Env.readFloat64Array2D(fd, self.ptrs.ptr, self.width, self.height);
+        Env.readFloat64Array2D(fd, self.ptr, self.width, self.height);
         return self;
     }
-    inline fn read(self: Self, fd: Fd) void {
-        Env.readFloat64Array2D(fd, self.ptrs.ptr, self.width, self.height);
+    inline fn read(self: *const Self, fd: Fd) void {
+        Env.readFloat64Array2D(fd, self.ptr, self.width, self.height);
     }
-    inline fn write(self: Self, fd: Fd) void {
-        Env.writeFloat64Array2D(fd, self.ptrs.ptr, self.width, self.height);
+    inline fn write(self: *const Self, fd: Fd) void {
+        Env.writeFloat64Array2D(fd, self.ptr, self.width, self.height);
     }
-    inline fn deinit(self: Self, allocator: Allocator) void {
-        for (self.data) |value| {
-            allocator.free(value);
+    inline fn deinit(self: *const Self, allocator: Allocator) void {
+        const ptrs = self.ptr[0..self.width];
+        for (ptrs) |ptr| {
+            allocator.free(ptr[0..self.height]);
         }
-        allocator.free(self.data);
+        allocator.free(ptrs);
+    }
+    test Self {
+        const allocator = std.testing.allocator;
+        const arr = try init(allocator, 32, 32);
+        defer arr.deinit(allocator);
     }
 };
+test {
+    _ = Float64Array;
+    _ = Float64Array2D;
+}
 const World = @cImport({
     for (.{
         "matlabfunctions",
@@ -176,7 +191,6 @@ const GetAudioLength: fn (filename: [*c]const u8) callconv(.c) c_int = World.Get
 const wavread: fn (filename: [*c]const u8, fs: [*c]c_int, nbit: [*c]c_int, x: [*c]f64) callconv(.c) void = World.wavread;
 
 const Wasm = struct {
-    const builtin = @import("builtin");
     const allocator = std.heap.c_allocator;
     const stdout = std.io.getStdOut().writer();
     const endian = @tagName(builtin.cpu.arch.endian());
@@ -210,7 +224,7 @@ const Wasm = struct {
             }
         }
     }
-    export fn _get_info() c_int {
+    export fn _get_info() isize {
         _get_info_inner() catch return -1;
         return 0;
     }
@@ -218,15 +232,15 @@ const Wasm = struct {
         _ = ptr;
     }
     const path = "sample.wav";
-    export fn _wavreadlength() c_int {
+    export fn _wavreadlength() isize {
         const x_length = GetAudioLength(path);
         return x_length;
     }
-    export fn _wavread(x_length: c_int) isize {
+    export fn _wavread(x_length: usize) isize {
         if (x_length < 1)
             return -1;
-        var fs: c_int = 0;
-        var nbit: c_int = 0;
+        var fs: isize = 0;
+        var nbit: isize = 0;
         const x = Float64Array.init(allocator, if (x_length > 2) @bitCast(x_length) else 2) catch return -2;
         defer x.deinit(allocator);
         wavread(path, &fs, &nbit, x.data.ptr);
@@ -238,7 +252,7 @@ const Wasm = struct {
         }
         return fs;
     }
-    export fn _wavwrite(x_length: c_int, fs: c_int) isize {
+    export fn _wavwrite(x_length: isize, fs: isize) isize {
         if (x_length < 1 or fs < 1)
             return -1;
         const x = Float64Array.from(allocator, @bitCast(x_length), .x) catch return -2;
@@ -252,7 +266,7 @@ const Wasm = struct {
     var cheapTrickOption: World.CheapTrickOption = undefined;
     var d4cOption: World.D4COption = undefined;
 
-    export fn _init_world(fs: c_int, f0_floor: f64, f0_ceil: f64) c_int {
+    export fn _init_world(fs: isize, f0_floor: f64, f0_ceil: f64) isize {
         if (fs < 1)
             return -1;
         InitializeDioOption(&dioOption);
@@ -272,13 +286,13 @@ const Wasm = struct {
         return cheapTrickOption.fft_size;
     }
 
-    export fn _dio(x_length: usize, fs: c_int, frame_period: f64, withStoneMask: c_int) c_int {
+    export fn _dio(x_length: usize, fs: isize, frame_period: f64, withStoneMask: isize) isize {
         return @call(.always_inline, @"F0 estimation method", .{ .Dio, x_length, fs, frame_period, withStoneMask != 0 });
     }
-    export fn _harvest(x_length: usize, fs: c_int, frame_period: f64, withStoneMask: c_int) c_int {
+    export fn _harvest(x_length: usize, fs: isize, frame_period: f64, withStoneMask: isize) isize {
         return @call(.always_inline, @"F0 estimation method", .{ .Harvest, x_length, fs, frame_period, withStoneMask != 0 });
     }
-    fn @"F0 estimation method"(comptime method: enum { Dio, Harvest }, x_length: usize, fs: c_int, frame_period: f64, withStoneMask: bool) c_int {
+    fn @"F0 estimation method"(comptime method: enum { Dio, Harvest }, x_length: usize, fs: isize, frame_period: f64, withStoneMask: bool) isize {
         if (x_length < 1 or fs < 1 or frame_period < 1)
             return -1;
         const x = Float64Array.from(allocator, x_length, .x) catch return -2;
@@ -319,7 +333,7 @@ const Wasm = struct {
         }
         return 0;
     }
-    export fn _stonemask(x_length: usize, fs: c_int, f0_length: usize) c_int {
+    export fn _stonemask(x_length: usize, fs: isize, f0_length: usize) isize {
         if (x_length < 1 or fs < 1 or f0_length < 1)
             return -1;
         const x = Float64Array.from(allocator, x_length, .x) catch return -1;
@@ -334,7 +348,7 @@ const Wasm = struct {
         refined_f0.write(.f0);
         return 0;
     }
-    export fn _cheaptrick(x_length: usize, fs: c_int, f0_length: usize) isize {
+    export fn _cheaptrick(x_length: usize, fs: isize, f0_length: usize) isize {
         if (x_length < 1 or fs < 1 or f0_length < 1)
             return -1;
         const x = Float64Array.from(allocator, x_length, .x) catch return -1;
@@ -355,12 +369,12 @@ const Wasm = struct {
             f0.data.ptr,
             @bitCast(f0_length),
             &cheapTrickOption,
-            @constCast(@ptrCast(spectrogram.ptrs.ptr)),
+            @ptrCast(@constCast(spectrogram.ptr)),
         );
         spectrogram.write(.spectrogram);
         return @bitCast(fft_size);
     }
-    export fn _d4c(x_length: usize, fs: c_int, f0_length: usize, _fft_size: usize) c_int {
+    export fn _d4c(x_length: usize, fs: isize, f0_length: usize, _fft_size: usize) isize {
         if (x_length < 1 or fs < 1 or f0_length < 1)
             return -1;
         const x = Float64Array.from(allocator, x_length, .x) catch return -1;
@@ -384,12 +398,12 @@ const Wasm = struct {
             @bitCast(f0_length),
             @bitCast(fft_size),
             &d4cOption,
-            @constCast(@ptrCast(aperiodicity.ptrs.ptr)),
+            @ptrCast(@constCast(aperiodicity.ptr)),
         );
         aperiodicity.write(.aperiodicity);
         return 0;
     }
-    export fn _synthesis(f0_length: usize, fft_size: usize, fs: c_int, frame_period: f64) c_int {
+    export fn _synthesis(f0_length: usize, fft_size: usize, fs: isize, frame_period: f64) isize {
         if (f0_length < 1 or fft_size < 1 or fs < 1 or frame_period < 1)
             return -1;
         const f0 = Float64Array.from(allocator, f0_length, .f0) catch return -1;
@@ -404,8 +418,8 @@ const Wasm = struct {
         Synthesis(
             f0.data.ptr,
             @bitCast(f0_length),
-            spectrogram.ptrs.ptr,
-            aperiodicity.ptrs.ptr,
+            spectrogram.ptr,
+            aperiodicity.ptr,
             @bitCast(fft_size),
             frame_period,
             fs,
@@ -418,5 +432,6 @@ const Wasm = struct {
 };
 
 comptime {
-    _ = Wasm;
+    if (builtin.cpu.arch.isWasm())
+        _ = Wasm;
 }

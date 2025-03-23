@@ -1,12 +1,12 @@
 
 import { Ndarray } from './ndarray'
-import { createWorld } from './world'
+import { createWorldInner } from './world'
 
 self.addEventListener('message', async (e) => {
   try {
     const { data } = e
     const functionToRun = Function(`'use strict';return (${data.functionToRun})`)()
-    const world = await createWorld(data.module)
+    const world = await createWorldInner(data.module)
     let [result, transfer] = await functionToRun({ Ndarray, world }, data.args)
     postMessage(result, transfer)
   } catch (error) {

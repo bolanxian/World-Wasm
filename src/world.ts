@@ -1,5 +1,5 @@
 
-import { _wai } from './loader'
+import { _wai, getModule } from './loader'
 import { Ndarray, TypedArray, TypeNdarray } from './ndarray'
 
 export type X = TypedArray<'float32' | 'float64'>
@@ -41,6 +41,7 @@ const assertRet = (ret: number) => {
 const { min } = Math
 const ERRNO_BADF = 8
 const ERRNO_INVAL = 28
+const ERRNO_NOTSUP = 58
 class WasiFile {
   #buffer: Uint8Array
   #pos: number = 0
@@ -129,16 +130,17 @@ class WasiFile {
 }
 
 export let currentInstance: WebAssembly.Instance | null = null
-let _createWorld: (module: WebAssembly.Module) => Promise<World>
+export let createWorldInner: (module: WebAssembly.Module) => Promise<World>
+export const createWorld: () => Promise<World> = async () => createWorldInner(await getModule())
 export class World implements WorldInterface {
   static {
-    _createWorld = async (module: WebAssembly.Module) => {
+    createWorldInner = async (module: WebAssembly.Module) => {
       const instance = await _wai(module, {
         wasi_snapshot_preview1: {
           fd_read(fd: number, iovs_ptr: number, iovs_len: number, nread_ptr: number): number {
             const buffer = memory.buffer
             const file = that.#fds[fd]
-            if (file == null) { return -ERRNO_BADF }
+            if (file == null) { return ERRNO_BADF }
             let nread = file.read(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nread_ptr, 1)[0] = nread
             return 0
@@ -146,7 +148,7 @@ export class World implements WorldInterface {
           fd_write(fd: number, iovs_ptr: number, iovs_len: number, nwritten_ptr: number): number {
             const buffer = memory.buffer
             const file = that.#fds[fd]
-            if (file == null) { return -ERRNO_BADF }
+            if (file == null) { return ERRNO_BADF }
             let nwrite = file.write(new Uint32Array(buffer, iovs_ptr >>> 0, iovs_len * 2))
             new Uint32Array(buffer, nwritten_ptr, 1)[0] = nwrite
             return 0
@@ -154,21 +156,23 @@ export class World implements WorldInterface {
           fd_seek(fd: number, offset: bigint, whence: number, offset_out_ptr: number): number {
             const buffer = memory.buffer
             const file = that.#fds[fd]
-            if (file == null) { return -ERRNO_BADF }
+            if (file == null) { return ERRNO_BADF }
             let new_offset = file.seek(Number(offset), whence)
-            if (new_offset < 0) { return -ERRNO_INVAL }
+            if (new_offset < 0) { return ERRNO_INVAL }
             new BigUint64Array(buffer, offset_out_ptr >>> 0, 1)[0] = BigInt(new_offset)
             return 0
           },
           fd_fdstat_get(fd: number, stat_ptr: number): number {
             const buffer = memory.buffer
-            new Uint8Array(buffer, stat_ptr, 1)[0] = 4
+            new Uint8Array(buffer, stat_ptr, 1)[0] = fd > 2 ? 4 : 2
             return 0
           },
-          fd_fdstat_set_flags(fd: number, flags: number) { },
+          fd_fdstat_set_flags(fd: number, flags: number): number {
+            return ERRNO_NOTSUP
+          },
           fd_close(fd: number): number {
             const file = that.#fds[fd]
-            if (file == null) { return -ERRNO_BADF }
+            if (file == null) { return ERRNO_BADF }
             file.seek(0, 0)
             return 0
           },
@@ -319,12 +323,14 @@ export class World implements WorldInterface {
     const f0_length = f0.length
     try {
       if (f0_length != spectrogram.shape[0] || f0_length != aperiodicity.shape[0]) {
-        throw new TypeError(`Mismatched number of frames between F0 (${f0_length}), ` +
-          `spectrogram (${spectrogram.shape[0]}) and aperiodicty (${aperiodicity.shape[0]})`)
+        throw new TypeError(`\
+Mismatched number of frames between F0 (${f0_length}), \
+spectrogram (${spectrogram.shape[0]}) and aperiodicty (${aperiodicity.shape[0]})`)
       }
       if (spectrogram.shape[1] != aperiodicity.shape[1]) {
-        throw new TypeError(`Mismatched dimensionality (spec size) between ` +
-          `spectrogram (${spectrogram.shape[1]}) and aperiodicity (${aperiodicity.shape[1]})`)
+        throw new TypeError(`\
+Mismatched dimensionality (spec size) between \
+spectrogram (${spectrogram.shape[1]}) and aperiodicity (${aperiodicity.shape[1]})`)
       }
       this.#context = [null, null, f0, spectrogram, aperiodicity]
       assertRet(this.#exports._synthesis(f0_length, (spectrogram.shape[1] - 1) * 2, fs, frame_period))
@@ -371,4 +377,3 @@ export class World implements WorldInterface {
     }
   }
 }
-export const createWorld = _createWorld

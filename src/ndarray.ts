@@ -22,7 +22,7 @@ export type TypeNdarray<N extends number, T extends Types = Types> = _TypeNdarra
 export type NdarrayPacked = {
   shape: number[],
   dtype: Types,
-  buffer: Uint8Array
+  buffer: TypedArray<'uint8'>
 }
 export const isTypedArrayConstructor = (value: any): value is TypedArrayConstructor => Object.getPrototypeOf(value) === TypedArray
 export const isTypedArray = (value: any): value is TypedArray => value instanceof TypedArray
@@ -36,7 +36,7 @@ for (const [name, Ctor] of Object.entries(types) as [Types, TypedArrayConstructo
 
 const { call } = Function.prototype, mul = (a: number, b: number): number => a * b
 const _subarray = call.bind(typedArray.subarray) as <T extends TypedArray>(thisArg: T, begin?: number, end?: number) => T
-export class Ndarray extends Array<unknown>{
+export class Ndarray extends Array<unknown> {
   static isNdarray<N extends number, T extends Types>(
     ndarray: any, ndim: N, dtype?: T
   ): ndarray is TypeNdarray<N, T> {

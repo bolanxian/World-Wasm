@@ -8,8 +8,6 @@ pnpm-debug.log*
 lerna-debug.log*
 
 deps/*
-!deps/World
-!deps/world.wasm
 temp
 package-lock.json
 node_modules
